@@ -639,3 +639,125 @@ Best IP
   {
     "ip": "103.170.72.120",
     "port": 27051
+
+
+
+请你再加几个构造API
+请求:
+{DOMAIN}/UUID?base64--目前app.js做的,整合内置API
+请求:
+{DOMAIN}/国家代号/UUID?base64------整合https://bestip.06151953.xyz/country/国家代号--返回数据-------[
+  {
+    "ip": "103.170.72.120",
+    "port": 25111
+  },
+  {
+    "ip": "103.170.72.120",
+    "port": 25122
+  },---------这个API返回的ip以及端口,给节点名称叫做国家代号-ip-端口
+
+请求:
+{DOMAIN}/bestip/UUID?base64------整合https://bestip.06151953.xyz/bestip--这个API返回的ip以及端口，返回的数据是：[{"ip":"217.195.200.138","port":443,"tls":true,"datacenter":"FRA","region":"Europe","city":"Frankfurt","asn":"199524","latency":"117 ms"},节点名称叫做ip-端口-city-延迟
+请求：
+{DOMAIN}/country------整合https://bestip.06151953.xyz/api/stats返回的数据：返回的数据{
+  "total": 6033,
+  "byRegion": {
+    "Europe": 4324,
+    "Asia Pacific": 838,
+    "North America": 804,
+    "Middle East": 30,
+    "Oceania": 23,
+    "South America": 14
+  },
+  "byDatacenter": {
+    "FRA": 1236,
+    "ARN": 729,
+    "AMS": 638,
+    "CDG": 620,
+    "ICN": 290,
+    "LAX": 275,
+    "WAW": 242,
+    "LHR": 194,
+    "SJC": 187,
+    "HEL": 174,
+    "NRT": 143,
+    "SIN": 132,
+    "HKG": 103,
+    "RIX": 94,
+    "FUK": 86,
+    "IAD": 84,
+    "IST": 57,
+    "YYZ": 56,
+    "MAD": 49,
+    "PDX": 47,
+    "ZRH": 42,
+    "DUS": 38,
+    "SEA": 37,
+    "KIX": 29,
+    "OTP": 29,
+    "SOF": 29,
+    "DME": 26,
+    "VIE": 24,
+    "ORD": 24,
+    "SYD": 22,
+    "BOM": 21,
+    "MXP": 20,
+    "EWR": 19,
+    "BUF": 18,
+    "TLV": 17,
+    "DFW": 17,
+    "CPH": 13,
+    "YUL": 12,
+    "GRU": 12,
+    "TPE": 11,
+    "KIV": 11,
+    "EVN": 11,
+    "ATL": 11,
+    "DUB": 10,
+    "GVA": 10,
+    "KBP": 8,
+    "ALA": 8,
+    "BUD": 7,
+    "FCO": 7,
+    "BKK": 6,
+    "PHX": 6,
+    "MCI": 4,
+    "KHH": 3,
+    "MRS": 3,
+    "LED": 3,
+    "MIA": 3,
+    "BLR": 2,
+    "HYD": 2,
+    "BCN": 2,
+    "TXL": 2,
+    "MCT": 2,
+    "CMH": 2,
+    "PRG": 2,
+    "EZE": 2,
+    "KUL": 1,
+    "MEL": 1,
+    "MAA": 1,
+    "MAN": 1,
+    "MUC": 1,
+    "BTS": 1,
+    "HAM": 1,
+    "LCA": 1,
+    "YVR": 1,
+    "DEN": 1
+  },
+  "byCity": {
+    "Frankfurt": 1236,
+    "Stockholm": 729,
+    "Amsterdam": 638,
+    "Paris": 620,
+    "Seoul": 290,
+    "Los Angeles": 275,
+    "Warsaw": 242,
+    "London": 194,
+    "San Jose": 187,
+    "Helsinki": 174,
+    "Tokyo": 143,
+    "Singapore": 132,
+    "Hong Kong": 103,
+    "Riga": 94,
+    "Fukuoka": 86,---------识别bycity的这些常见city，在代码里面写一个对应表，对应国家两位代码

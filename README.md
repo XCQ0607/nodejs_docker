@@ -1,58 +1,100 @@
-# Vless Node.js Docker 镜像
+# Nodejs VLESS 代理服务
 
-这个Docker镜像包含了一个基于Cloudflare的Vless代理Node.js应用。
+基于Node.js的VLESS代理服务，支持多API整合及智能代理URL构建功能。
 
-## 镜像信息
-- 镜像名称：`xcq0607/nodejs_vless:latest`
-- Docker Hub地址：`https://hub.docker.com/r/xcq0607/nodejs_vless`
+## 功能特点
 
-## 部署说明
+- 多API整合模式，自动获取最优节点
+- 国家API模式，根据两字母国家代码选择节点
+- 地区API模式，根据地理区域选择节点（支持Asia Pacific、North America等含空格地区）
+- 可选的Base64编码输出
+- 支持正则表达式筛选
+- 友好的代理URL构造界面
+- 自动定期更新后端API数据
 
-在部署此镜像到您的平台时，请使用以下配置：
+## 快速部署
 
-### 基本配置
-- **应用名称**：选择任意名称（例如：vless-proxy）
-- **镜像**：`xcq0607/nodejs_vless:latest`
-- **镜像可见性**：公开
+### 方法一：一键部署脚本（推荐）
 
-### 资源配置
-- **用量**：固定（推荐）或可扩展
-- **副本数**：1（需要时可增加）
-- **CPU**：0.2核心（最低推荐）
-- **内存**：256 MB（最低推荐）
-
-### 网络配置
-- **容器端口**：3000（必须与PORT环境变量匹配）
-- **公开访问**：如果需要公开访问服务，请启用
-
-### 环境变量
-您需要设置以下环境变量：
-- `UUID`：您的Vless代理UUID
-- `PORT`：设置为3000（必须与暴露的端口匹配）
-- `DOMAIN`：您的域名
-
-可选环境变量：
-- `NEZHA_SERVER`：哪吒服务器地址（可选）
-- `NEZHA_PORT`：哪吒服务器端口（可选）
-- `NEZHA_KEY`：哪吒密钥（可选）
-- `NAME`：自定义名称（默认为主机名）
-
-## 如何访问
-部署后，您可以通过以下方式访问您的服务：
-- 主服务：`https://您的域名/`
-- Vless配置：`https://您的域名/您的UUID`
-- Base64编码配置：`https://您的域名/您的UUID?base64` 或 `https://您的域名/您的UUID?b64`
-
-## 使用方法
 ```bash
-# 拉取镜像
-docker pull xcq0607/nodejs_vless:latest
+bash <(curl -s https://raw.githubusercontent.com/XCQ0607/nodejs_docker/main/setup.sh) -u YOUR-UUID -d your-domain.com
+```
 
-# 运行容器
-docker run -d -p 3000:3000 \
-  -e UUID=您的UUID \
+或使用自定义端口:
+
+```bash
+bash <(curl -s https://raw.githubusercontent.com/XCQ0607/nodejs_docker/main/setup.sh) -u YOUR-UUID -d your-domain.com -p 8080
+```
+
+### 方法二：手动Docker部署
+
+1. 安装Docker
+
+```bash
+curl -fsSL https://get.docker.com | sh
+```
+
+2. 拉取镜像
+
+```bash
+docker pull xcq0607/nodejs_vless:latest
+```
+
+3. 运行容器
+
+```bash
+docker run -d --restart=always \
+  -p 3000:3000 \
+  -e UUID=your-uuid-here \
+  -e DOMAIN=your-domain.com \
   -e PORT=3000 \
-  -e DOMAIN=您的域名 \
   --name vless-proxy \
   xcq0607/nodejs_vless:latest
-``` 
+```
+
+## 使用方法
+
+### 基本URL格式
+
+```
+http://yourserver:port/UUID                  # 多API整合模式
+http://yourserver:port/XX/UUID               # 国家API模式 (XX为两字母国家代码)
+http://yourserver:port/Region/UUID           # 地区API模式 (Region为地区名称)
+http://yourserver:port/UUID/select           # 代理URL构造界面
+```
+
+### URL参数
+
+- `base64` - 输出Base64编码的结果
+- `regex=true` - 启用正则表达式筛选
+
+### 示例
+
+```
+http://yourserver:3000/test123               # 多API整合，返回所有节点
+http://yourserver:3000/US/test123            # 返回美国节点
+http://yourserver:3000/Asia%20Pacific/test123 # 返回亚太地区节点
+http://yourserver:3000/Europe/test123?regex=true # 使用正则搜索欧洲地区节点
+http://yourserver:3000/DE/test123?base64     # 返回德国节点，Base64编码
+http://yourserver:3000/test123/select        # 打开代理URL构造界面
+```
+
+## 环境变量
+
+| 变量名 | 必填 | 默认值 | 描述              |
+| ------ | ---- | ------ | ----------------- |
+| UUID   | 是   | -      | 用户唯一标识      |
+| DOMAIN | 是   | -      | 域名，用于SNI设置 |
+| PORT   | 否   | 3000   | 服务监听端口      |
+
+## API数据来源
+
+- 全球优选CloudFlare IP
+- 地区和国家特定IP
+- 每10分钟自动更新API数据
+
+## 注意事项
+
+- 确保服务器防火墙已开放对应端口
+- UUID可自定义，建议使用复杂字符串提高安全性
+- DOMAIN参数用于SNI，建议使用有效域名
