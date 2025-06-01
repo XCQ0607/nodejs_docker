@@ -1,0 +1,20 @@
+{
+  "name": "14457",
+  "version": "1.0.0",
+  "description": "14457",
+  "main": "fun.js",
+  "author": "yonggekkk",
+  "license": "MIT",
+  "private": false,
+  "scripts": {
+    "start": "node fun.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "axios": "^1.6.2",
+    "ws": "^8.14.2"
+  },
+  "engines": {
+    "node": ">=14"
+  }
+}
