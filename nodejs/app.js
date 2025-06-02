@@ -5,6 +5,19 @@ const fs = require('fs');
 const path = require('path');
 const net = require('net');
 const { exec, execSync } = require('child_process');
+
+// 检查Node.js版本
+const nodeVersion = process.versions.node;
+const majorVersion = parseInt(nodeVersion.split('.')[0], 10);
+if (majorVersion < 20) {
+  console.log('\x1b[33m%s\x1b[0m', '⚠️ 警告: 您正在使用Node.js ' + nodeVersion);
+  console.log('\x1b[33m%s\x1b[0m', '建议使用Node.js 20或更高版本以获得最佳体验和性能');
+  console.log('\x1b[36m%s\x1b[0m', '升级指南:');
+  console.log('\x1b[36m%s\x1b[0m', '1. 使用nvm: curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash && nvm install 20');
+  console.log('\x1b[36m%s\x1b[0m', '2. 或官方安装包: https://nodejs.org/en/download/');
+  console.log('\x1b[33m%s\x1b[0m', '将尝试继续运行，但可能会遇到兼容性问题...\n');
+}
+
 function ensureModule(name) {
     try {
         require.resolve(name);

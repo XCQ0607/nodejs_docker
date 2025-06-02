@@ -52,6 +52,30 @@ docker run -d --restart=always \
   xcq0607/nodejs_vless:latest
 ```
 
+## Docker镜像更新说明
+
+最新版本的Docker镜像已经更新并上传至Docker Hub，主要改进包括：
+
+- 升级到Node.js 20版本，提供更好的性能和更新的特性
+- 增强了容器安全性，使用非root用户运行应用
+- 添加了健康检查功能，便于监控容器状态
+- 优化了缓存清理，减小了镜像体积
+
+### 使用Docker镜像
+
+```bash
+# 拉取最新镜像
+docker pull xcq0607/nodejs_vless:latest
+
+# 运行容器
+docker run -d -p 3000:3000 \
+  -e UUID=您的UUID \
+  -e DOMAIN=您的域名 \
+  -e PORT=3000 \
+  --name vless_proxy \
+  xcq0607/nodejs_vless:latest
+```
+
 ## 使用方法
 
 ### 基本URL格式

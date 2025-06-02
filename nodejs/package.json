@@ -1,17 +1,17 @@
 {
-  "name": "14457",
+  "name": "node-ws",
   "version": "1.0.0",
-  "description": "14457",
-  "main": "fun.js",
-  "author": "yonggekkk",
+  "description": "Node.js Server",
+  "main": "app.js",
+  "author": "",
+  "repository": "",
   "license": "MIT",
   "private": false,
   "scripts": {
-    "start": "node fun.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node app.js"
   },
   "dependencies": {
-    "axios": "^1.6.2",
+    "axios": "^1.9.0",
     "ws": "^8.14.2"
   },
   "engines": {
