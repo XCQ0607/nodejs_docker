@@ -2555,29 +2555,35 @@ async function handleLoginPage(request) {
             // 检查localStorage中的token或cookie中的session
             const savedToken = localStorage.getItem('session_token');
 
-            // 验证session是否有效（优先检查cookie，然后检查localStorage）
-            fetch('/api/verify-session', {
-                headers: savedToken ? {
-                    'X-Session-Token': savedToken
-                } : {}
-            })
-            .then(response => {
-                if (response.ok) {
-                    // Session有效，重定向到dashboard
-                    window.location.href = '/dashboard';
-                } else {
-                    // Session无效，清除保存的token
-                    if (savedToken) {
+            // 只有在有保存的token时才进行验证，避免不必要的请求
+            if (savedToken) {
+                console.log('发现保存的token，验证中...');
+
+                // 验证session是否有效
+                fetch('/api/verify-session', {
+                    headers: {
+                        'X-Session-Token': savedToken
+                    }
+                })
+                .then(response => {
+                    if (response.ok) {
+                        console.log('Token有效，重定向到dashboard');
+                        // Session有效，重定向到dashboard
+                        window.location.href = '/dashboard';
+                    } else {
+                        console.log('Token无效，清除保存的token');
+                        // Session无效，清除保存的token
                         localStorage.removeItem('session_token');
                     }
-                }
-            })
-            .catch(error => {
-                console.error('验证session失败:', error);
-                if (savedToken) {
+                })
+                .catch(error => {
+                    console.error('验证session失败:', error);
                     localStorage.removeItem('session_token');
-                }
-            });
+                });
+            } else {
+                console.log('没有保存的token，显示登录表单');
+                // 没有保存的token，直接显示登录表单
+            }
         });
 
         loginForm.addEventListener('submit', async function(e) {
@@ -2605,20 +2611,16 @@ async function handleLoginPage(request) {
 
                 if (response.ok) {
                     // 登录成功
-                    console.log('登录成功，结果:', result);
                     if (remember && result.token) {
                         localStorage.setItem('session_token', result.token);
-                        console.log('Token已保存到localStorage:', result.token);
                     }
 
                     // 添加短暂延迟确保cookie设置完成
                     setTimeout(() => {
-                        console.log('重定向到dashboard');
                         window.location.href = '/dashboard';
                     }, 100);
                 } else {
                     // 登录失败
-                    console.error('登录失败:', result);
                     showError(result.error || '登录失败');
                 }
             } catch (error) {
@@ -2752,11 +2754,7 @@ async function checkAuth(request) {
   const sessionMatch = cookies.match(/session_token=([^;]+)/);
   const sessionToken = sessionMatch ? sessionMatch[1] : request.headers.get('X-Session-Token');
 
-  console.log('认证检查 - Cookies:', cookies);
-  console.log('认证检查 - Session Token:', sessionToken ? 'Found' : 'Not found');
-
   if (sessionToken && await validateSessionToken(sessionToken)) {
-    console.log('认证成功');
     return true;
   }
 
@@ -2765,8 +2763,6 @@ async function checkAuth(request) {
   if (url.pathname === '/login' || url.pathname === '/api/login') {
     return true; // 允许访问登录页面
   }
-
-  console.log('认证失败，重定向到登录页面');
   // 返回需要登录的响应
   return new Response(null, {
     status: 302,
