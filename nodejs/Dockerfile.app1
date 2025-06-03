@@ -1,0 +1,32 @@
+FROM node:20-slim
+
+# 设置工作目录
+WORKDIR /app
+
+# 创建非root用户
+RUN groupadd -r nodeuser && useradd -r -g nodeuser -m -s /bin/bash nodeuser
+
+# 复制package.json和package-lock.json (如果存在)
+COPY package*.json ./
+
+# 安装依赖
+RUN npm install && npm cache clean --force
+
+# 复制应用代码
+COPY app1.js ./app.js
+
+# 设置适当的权限
+RUN chown -R nodeuser:nodeuser /app
+
+# 切换到非root用户
+USER nodeuser
+
+# 暴露端口(可通过环境变量配置)
+EXPOSE 3000
+
+# 健康检查 - 使用 Node.js 内置方式
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:${PORT:-3000}/', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
+
+# 启动应用
+CMD ["node", "app.js"]

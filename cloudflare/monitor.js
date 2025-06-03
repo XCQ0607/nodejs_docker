@@ -38,6 +38,11 @@ const DEFAULT_SITE_CONFIG = {
     event.waitUntil(handleScheduledMonitoring());
   });
 
+  // Worker 关闭时强制刷新缓存
+  addEventListener('beforeunload', event => {
+    event.waitUntil(flushAllCaches());
+  });
+
   async function handleRequest(request) {
     const url = new URL(request.url);
     const path = url.pathname;
@@ -157,9 +162,27 @@ const DEFAULT_SITE_CONFIG = {
     }
   }
 
-  // 记录访问日志
+  // 内存中的日志缓存
+  let logCache = [];
+  let lastLogFlush = Date.now();
+  const LOG_FLUSH_INTERVAL = 5 * 60 * 1000; // 5分钟刷新一次
+  const LOG_BATCH_SIZE = 50; // 批量大小
+
+  // 记录访问日志（优化版本 - 减少KV写入）
   async function logAccess(request, path) {
     try {
+      // 跳过某些路径的日志记录以减少写入
+      if (path.startsWith('/api/') ||
+          path === '/favicon.ico' ||
+          path.includes('.css') ||
+          path.includes('.js') ||
+          path === '/login' ||
+          path === '/dashboard' ||
+          path.includes('session') ||
+          path.includes('verify')) {
+        return;
+      }
+
       const clientIP = request.headers.get('CF-Connecting-IP') ||
                       request.headers.get('X-Forwarded-For') ||
                       'unknown';
@@ -177,7 +200,25 @@ const DEFAULT_SITE_CONFIG = {
         country: request.cf?.country || 'unknown'
       };
 
-      // 获取今天的日期作为key
+      // 添加到内存缓存
+      logCache.push(logEntry);
+
+      // 检查是否需要刷新到KV
+      const now = Date.now();
+      if (logCache.length >= LOG_BATCH_SIZE || (now - lastLogFlush) >= LOG_FLUSH_INTERVAL) {
+        await flushLogsToKV();
+      }
+
+    } catch (error) {
+      console.error('记录访问日志失败:', error);
+    }
+  }
+
+  // 将缓存的日志批量写入KV
+  async function flushLogsToKV() {
+    if (logCache.length === 0) return;
+
+    try {
       const today = new Date().toISOString().split('T')[0];
       const logKey = `access_log_${today}`;
 
@@ -188,8 +229,8 @@ const DEFAULT_SITE_CONFIG = {
         todayLogs = JSON.parse(existingLogs);
       }
 
-      // 添加新日志
-      todayLogs.push(logEntry);
+      // 添加缓存的日志
+      todayLogs.push(...logCache);
 
       // 限制每天最多1000条日志
       if (todayLogs.length > 1000) {
@@ -199,8 +240,31 @@ const DEFAULT_SITE_CONFIG = {
       // 保存日志
       await PROXY_KV.put(logKey, JSON.stringify(todayLogs));
 
+      const logCount = logCache.length;
+      console.log(`批量写入 ${logCount} 条日志到 KV`);
+
+      // 清空缓存
+      logCache = [];
+      lastLogFlush = Date.now();
+
     } catch (error) {
-      console.error('记录访问日志失败:', error);
+      console.error('批量写入日志失败:', error);
+      // 发生错误时也要清空缓存，避免内存泄漏
+      logCache = [];
+    }
+  }
+
+  // 强制刷新所有缓存
+  async function flushAllCaches() {
+    try {
+      console.log('强制刷新所有缓存...');
+      await Promise.all([
+        flushLogsToKV(),
+        flushMonitorHistoryToKV()
+      ]);
+      console.log('所有缓存已刷新');
+    } catch (error) {
+      console.error('刷新缓存失败:', error);
     }
   }
 
@@ -940,6 +1004,390 @@ const DEFAULT_SITE_CONFIG = {
           ::-webkit-scrollbar-thumb:hover {
               background: #a8a8a8;
           }
+
+          /* 手机端适配样式 */
+          @media (max-width: 768px) {
+              .header {
+                  padding: 0.75rem 1rem;
+                  position: relative;
+              }
+
+              .header h1 {
+                  font-size: 1.2rem;
+                  display: block;
+                  margin-bottom: 0.5rem;
+              }
+
+              .logout-btn {
+                  float: none;
+                  position: absolute;
+                  top: 0.75rem;
+                  right: 1rem;
+                  padding: 0.4rem 0.8rem;
+                  font-size: 0.85rem;
+              }
+
+              .container {
+                  margin: 1rem auto;
+                  padding: 0 0.5rem;
+              }
+
+              .tabs {
+                  flex-wrap: wrap;
+                  border-radius: 8px 8px 0 0;
+              }
+
+              .tab {
+                  flex: 1;
+                  min-width: calc(50% - 1px);
+                  padding: 0.75rem 0.5rem;
+                  font-size: 0.9rem;
+                  border-bottom: 1px solid #e2e8f0;
+              }
+
+              .tab-content {
+                  padding: 1rem;
+                  min-height: auto;
+                  border-radius: 0 0 8px 8px;
+              }
+
+              .stats-grid {
+                  grid-template-columns: repeat(2, 1fr);
+                  gap: 0.75rem;
+                  margin-bottom: 1.5rem;
+              }
+
+              .stats-card {
+                  padding: 1rem;
+              }
+
+              .stats-card h3 {
+                  font-size: 1.5rem;
+              }
+
+              .stats-card p {
+                  font-size: 0.85rem;
+              }
+
+              /* 监控卡片手机端优化 */
+              .monitor-grid {
+                  grid-template-columns: 1fr;
+                  gap: 1rem;
+              }
+
+              .monitor-card {
+                  padding: 1rem;
+                  border-radius: 12px;
+              }
+
+              .monitor-title {
+                  font-size: 1.1rem;
+              }
+
+              .monitor-stats {
+                  gap: 0.75rem;
+              }
+
+              .stat-item {
+                  padding: 0.5rem;
+              }
+
+              .stat-value {
+                  font-size: 1.2rem;
+              }
+
+              .stat-label {
+                  font-size: 0.75rem;
+              }
+
+              .monitor-actions {
+                  gap: 0.4rem;
+              }
+
+              .action-btn {
+                  padding: 0.4rem;
+                  font-size: 0.8rem;
+              }
+
+              /* 表格手机端优化 */
+              .log-table {
+                  font-size: 0.85rem;
+              }
+
+              .log-table th, .log-table td {
+                  padding: 0.5rem 0.25rem;
+              }
+
+              /* 表单手机端优化 */
+              .form-group input, .form-group textarea, .form-group select {
+                  padding: 0.6rem;
+                  font-size: 0.9rem;
+              }
+
+              .btn {
+                  padding: 0.6rem 1rem;
+                  font-size: 0.9rem;
+                  margin-bottom: 0.75rem;
+              }
+
+              .site-actions {
+                  flex-direction: column;
+                  gap: 0.5rem;
+              }
+
+              .site-actions .btn {
+                  max-width: none;
+                  width: 100%;
+              }
+
+              /* 模态框手机端优化 */
+              .modal-content {
+                  margin: 2% auto;
+                  width: 98%;
+                  max-height: 96vh;
+              }
+
+              .modal-header {
+                  padding: 1rem;
+              }
+
+              .modal-title {
+                  font-size: 1.2rem;
+              }
+
+              .modal-body {
+                  padding: 1rem;
+              }
+
+              .chart-container {
+                  height: 280px;
+                  overflow: hidden;
+              }
+
+              /* 图表按钮移动端优化 */
+              .chart-btn {
+                  font-size: 0.8rem !important;
+                  padding: 0.4rem 0.8rem !important;
+                  margin: 0.2rem;
+                  min-height: 36px;
+                  touch-action: manipulation;
+              }
+
+              /* 图表容器移动端优化 */
+              .chart-container {
+                  height: 300px; /* 从280px增加到300px，让手机端显示更完整 */
+              }
+
+              .chart-container canvas {
+                  max-width: 100% !important;
+                  max-height: 100% !important;
+                  width: 100% !important;
+                  height: 100% !important;
+                  aspect-ratio: 16/9; /* 添加固定纵横比，保持图表比例 */
+              }
+
+              /* 日期选择器手机端优化 */
+              .date-selector {
+                  flex-direction: column;
+                  gap: 0.75rem;
+                  align-items: stretch;
+              }
+
+              .date-selector input, .date-selector select {
+                  width: 100%;
+              }
+
+              /* 摘要卡片手机端优化 */
+              .summary-horizontal-container {
+                  flex-direction: column;
+                  padding: 1rem;
+              }
+
+              .summary-card-horizontal {
+                  min-width: auto;
+                  margin-bottom: 0.75rem;
+              }
+
+              .summary-icon {
+                  font-size: 1.5rem;
+                  width: 40px;
+                  height: 40px;
+              }
+
+              .summary-card-horizontal .summary-value {
+                  font-size: 1.4rem;
+              }
+
+              /* JSON编辑器手机端优化 */
+              .json-editor {
+                  min-height: 200px;
+                  font-size: 0.85rem;
+              }
+
+              /* 隐藏部分不重要的列 */
+              .log-table th:nth-child(5),
+              .log-table td:nth-child(5) {
+                  display: none;
+              }
+          }
+
+          /* 超小屏幕适配 */
+          @media (max-width: 480px) {
+              .header h1 {
+                  font-size: 1.1rem;
+              }
+
+              .stats-grid {
+                  grid-template-columns: 1fr;
+              }
+
+              .tab {
+                  min-width: 100%;
+                  border-right: none;
+                  border-bottom: 1px solid #e2e8f0;
+              }
+
+              .monitor-stats {
+                  grid-template-columns: 1fr;
+                  gap: 0.5rem;
+              }
+
+              .monitor-actions {
+                  flex-direction: column;
+              }
+
+              /* 隐藏更多不重要的列 */
+              .log-table th:nth-child(4),
+              .log-table td:nth-child(4),
+              .log-table th:nth-child(6),
+              .log-table td:nth-child(6) {
+                  display: none;
+              }
+
+              /* 超小屏幕图表优化 */
+              .chart-container {
+                  height: 350px; /* 增加超小屏幕的高度，从250px到350px */
+                  margin-bottom: 1.5rem;
+              }
+
+              .chart-btn {
+                  font-size: 0.75rem !important;
+                  padding: 0.3rem 0.6rem !important;
+                  min-width: 60px;
+              }
+          }
+
+          /* 手机端专用样式类 */
+          .monitor-header-mobile {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 1.5rem;
+              flex-wrap: wrap;
+              gap: 1rem;
+          }
+
+          .monitor-actions-mobile {
+              display: flex;
+              gap: 0.5rem;
+              flex-wrap: wrap;
+          }
+
+          .log-actions-mobile {
+              display: flex;
+              gap: 0.5rem;
+              margin-bottom: 1rem;
+              flex-wrap: wrap;
+              align-items: center;
+          }
+
+          .log-date-select {
+              flex: 1;
+              min-width: 120px;
+              padding: 0.5rem;
+              border: 2px solid #e2e8f0;
+              border-radius: 5px;
+              font-size: 0.9rem;
+          }
+
+          .log-table-container {
+              max-height: 600px;
+              overflow-y: auto;
+              overflow-x: auto;
+              border: 1px solid #e2e8f0;
+              border-radius: 8px;
+              -webkit-overflow-scrolling: touch;
+          }
+
+          .btn-mobile {
+              padding: 0.5rem 1rem;
+              font-size: 0.9rem;
+              white-space: nowrap;
+          }
+
+          /* 触摸友好的按钮 */
+          @media (max-width: 768px) {
+              .monitor-header-mobile {
+                  flex-direction: column;
+                  align-items: stretch;
+                  text-align: center;
+              }
+
+              .monitor-actions-mobile {
+                  justify-content: center;
+              }
+
+              .log-actions-mobile {
+                  flex-direction: column;
+                  gap: 0.75rem;
+              }
+
+              .log-actions-mobile > div {
+                  display: flex;
+                  gap: 0.5rem;
+              }
+
+              .log-date-select {
+                  width: 100%;
+                  margin-top: 0.5rem;
+              }
+
+              .btn-mobile {
+                  flex: 1;
+                  min-width: 80px;
+                  padding: 0.75rem 1rem;
+                  font-size: 0.85rem;
+              }
+
+              /* 增加触摸目标大小 */
+              .action-btn, .btn {
+                  min-height: 44px;
+                  touch-action: manipulation;
+              }
+
+              /* 卡片点击区域优化 */
+              .monitor-card {
+                  touch-action: manipulation;
+                  -webkit-tap-highlight-color: rgba(0,0,0,0.1);
+              }
+
+              .monitor-card:active {
+                  transform: translateY(-2px) scale(0.98);
+              }
+
+              /* 表格滚动优化 */
+              .log-table-container {
+                  overflow-x: auto;
+                  -webkit-overflow-scrolling: touch;
+              }
+
+              /* 模态框滚动优化 */
+              .modal-body {
+                  overflow-y: auto;
+                  -webkit-overflow-scrolling: touch;
+                  max-height: calc(100vh - 200px);
+              }
+          }
       </style>
       <!-- Chart.js 库 -->
       <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -1053,39 +1501,41 @@ const DEFAULT_SITE_CONFIG = {
           </div>
 
           <div class="tab-content" id="logs">
-              <div style="margin-bottom: 1rem;">
-                  <button class="btn" onclick="loadLogs()">刷新日志</button>
-                  <button class="btn btn-danger" onclick="clearLogs()">清空日志</button>
-                  <select id="log-date" onchange="loadLogs()">
+              <div class="log-actions-mobile">
+                  <div>
+                      <button class="btn btn-mobile" onclick="loadLogs()">🔄 刷新</button>
+                      <button class="btn btn-danger btn-mobile" onclick="clearLogs()">🗑️ 清空</button>
+                  </div>
+                  <select id="log-date" onchange="loadLogs()" class="log-date-select">
                       <option value="">选择日期</option>
                   </select>
               </div>
 
-              <div style="max-height: 600px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px;">
-              <table class="log-table">
-                  <thead>
-                      <tr>
-                          <th>时间</th>
-                          <th>IP地址</th>
-                          <th>方法</th>
-                          <th>路径</th>
-                          <th>用户代理</th>
-                          <th>国家</th>
-                      </tr>
-                  </thead>
-                  <tbody id="logs-table">
-                  </tbody>
-              </table>
+              <div class="log-table-container">
+                  <table class="log-table">
+                      <thead>
+                          <tr>
+                              <th>时间</th>
+                              <th>IP地址</th>
+                              <th>方法</th>
+                              <th>路径</th>
+                              <th>用户代理</th>
+                              <th>国家</th>
+                          </tr>
+                      </thead>
+                      <tbody id="logs-table">
+                      </tbody>
+                  </table>
               </div>
           </div>
 
           <div class="tab-content" id="monitor">
-              <div style="margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center;">
-                  <h3 style="margin: 0;">📊 服务监控</h3>
-                  <div>
-                      <button class="btn" onclick="loadMonitorStatus()">🔄 刷新状态</button>
-                      <button class="btn btn-success" onclick="exportMonitorData()">📊 导出数据</button>
-              </div>
+              <div class="monitor-header-mobile">
+                  <h3>📊 服务监控</h3>
+                  <div class="monitor-actions-mobile">
+                      <button class="btn btn-mobile" onclick="loadMonitorStatus()">🔄 刷新</button>
+                      <button class="btn btn-success btn-mobile" onclick="exportMonitorData()">📊 导出</button>
+                  </div>
               </div>
               <div class="monitor-grid" id="monitor-status">
                   <!-- 动态加载监控卡片 -->
@@ -1114,7 +1564,7 @@ const DEFAULT_SITE_CONFIG = {
 
                           <div id="range-selector">
                               <label>时间范围:</label>
-                              <select id="time-range" onchange="loadMonitorHistory()">
+                              <select id="time-range" onchange="loadMonitorHistory(window.currentMonitorSite)">
                                   <option value="24h">最近24小时</option>
                                   <option value="7d">最近7天</option>
                                   <option value="30d">最近30天</option>
@@ -1123,7 +1573,7 @@ const DEFAULT_SITE_CONFIG = {
 
                           <div id="date-selector" style="display: none;">
                               <label>选择日期:</label>
-                              <input type="date" id="monitor-date" onchange="loadMonitorHistory()">
+                              <input type="date" id="monitor-date" onchange="loadMonitorHistory(window.currentMonitorSite)">
                           </div>
                       </div>
 
@@ -1676,6 +2126,9 @@ const DEFAULT_SITE_CONFIG = {
 
         // 打开监控详情模态框
         function openMonitorDetail(key, status) {
+            // 存储当前网站key到全局变量
+            window.currentMonitorSite = key;
+
             document.getElementById('modal-title').textContent = key.charAt(0).toUpperCase() + key.slice(1) + ' - 监控详情';
             document.getElementById('monitor-modal').style.display = 'block';
 
@@ -1708,17 +2161,17 @@ const DEFAULT_SITE_CONFIG = {
                 dateSelector.style.display = 'none';
             }
 
-            // 重新加载数据
-            const modalTitle = document.getElementById('modal-title').textContent;
-            if (modalTitle.includes(' - 监控详情')) {
-                const key = modalTitle.split(' - ')[0].toLowerCase();
-                loadMonitorHistory(key);
+            // 重新加载数据 - 使用全局变量存储当前网站key
+            if (window.currentMonitorSite) {
+                loadMonitorHistory(window.currentMonitorSite);
             }
         }
 
         // 关闭监控详情模态框
         function closeMonitorModal() {
             document.getElementById('monitor-modal').style.display = 'none';
+            // 清除全局变量
+            window.currentMonitorSite = null;
         }
 
         // 点击模态框外部关闭
@@ -1728,6 +2181,8 @@ const DEFAULT_SITE_CONFIG = {
 
             if (event.target === monitorModal) {
                 monitorModal.style.display = 'none';
+                // 清除全局变量
+                window.currentMonitorSite = null;
             }
 
             if (event.target === editSiteModal) {
@@ -1830,6 +2285,17 @@ const DEFAULT_SITE_CONFIG = {
         // 加载监控历史数据
         async function loadMonitorHistory(key) {
             const viewMode = document.getElementById('view-mode').value;
+            
+            // 如果key未定义，尝试使用全局存储的站点标识
+            if (!key && window.currentMonitorSite) {
+                key = window.currentMonitorSite;
+            }
+            
+            // 如果仍然没有key，显示错误并返回
+            if (!key) {
+                showAlert('无法加载监控历史：站点标识未定义', 'error');
+                return;
+            }
 
             try {
                 // 构建API请求URL
@@ -1876,55 +2342,53 @@ const DEFAULT_SITE_CONFIG = {
             const chartContainer = document.getElementById('monitor-chart');
 
             if (historyData.length === 0) {
-                chartContainer.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #718096;">📊 暂无数据可显示</div>';
+                chartContainer.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 200px; color: #718096;">📊 暂无数据可显示</div>';
                 return;
             }
 
-            // 创建图表内容区域
-            chartContainer.innerHTML =
-                '<div style="padding: 1rem;">' +
-                    '<div style="display: flex; justify-content: center; gap: 1rem; margin-bottom: 1rem;">' +
-                        '<button class="chart-btn active" id="response-btn" onclick="showResponseTimeChart()">📈 响应时间趋势</button>' +
-                        '<button class="chart-btn" id="uptime-btn" onclick="showUptimeChart()">📊 在线状态</button>' +
-                        '<button class="chart-btn" id="summary-btn" onclick="showSummaryChart()">📋 数据概览</button>' +
-                    '</div>' +
-                    '<div style="height: 300px; position: relative;">' +
-                        '<canvas id="monitor-chart-canvas"></canvas>' +
-                    '</div>' +
-                '</div>';
-
-            // 保存数据供图表函数使用
-            window.currentChartData = historyData;
-
-            // 默认显示响应时间趋势
-            showResponseTimeChart();
-
-            const dataCount = historyData.length;
-            const onlineCount = historyData.filter(record => record.isOnline).length;
-            const avgResponseTime = historyData.filter(record => record.isOnline)
-                .reduce((sum, record) => sum + record.responseTime, 0) / onlineCount || 0;
-
+            // 获取时间范围文本
             let timeRangeText = '';
             if (viewMode === 'date') {
-                const date = document.getElementById('monitor-date').value;
-                timeRangeText = '日期: ' + date;
+                const dateInput = document.getElementById('monitor-date');
+                const date = dateInput ? dateInput.value : '';
+                timeRangeText = date ? '日期: ' + date : '选定日期';
             } else {
-                const range = document.getElementById('time-range').value;
+                const rangeInput = document.getElementById('time-range');
+                const range = rangeInput ? rangeInput.value : '24h';
                 const rangeMap = { '24h': '最近24小时', '7d': '最近7天', '30d': '最近30天' };
-                timeRangeText = rangeMap[range] || range;
+                timeRangeText = rangeMap[range] || '最近24小时';
             }
 
-            // 创建图表容器 - 确保在容器内部
+            // 检测是否为移动设备
+            const isMobile = window.innerWidth <= 768;
+            // 根据屏幕宽度动态调整图表高度
+            const screenWidth = window.innerWidth;
+            let chartHeight;
+            
+            if (screenWidth <= 480) { // 超小屏幕
+                chartHeight = '250px';
+            } else if (screenWidth <= 768) { // 平板/手机
+                chartHeight = '300px';
+            } else if (screenWidth <= 1200) { // 小型桌面
+                chartHeight = '400px';
+            } else { // 大型桌面
+                chartHeight = '450px';  // 降低了最大高度，减少空白
+            }
+            
+            const containerPadding = isMobile ? '0.75rem' : '1rem';
+            const buttonSize = isMobile ? 'font-size: 0.75rem; padding: 0.25rem 0.5rem;' : 'font-size: 0.85rem; padding: 0.4rem 0.8rem;';
+
+            // 创建图表容器 - 优化布局
             chartContainer.innerHTML =
-                '<div style="background: white; border-radius: 10px; padding: 1.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-top: 1rem;">' +
-                '<h4 style="text-align: center; margin-bottom: 1rem; color: #2d3748;">📈 ' + timeRangeText + ' 监控图表</h4>' +
-                '<div style="display: flex; gap: 1rem; margin-bottom: 1.5rem; justify-content: center; flex-wrap: wrap;">' +
-                '<button onclick="showResponseTimeChart()" class="chart-btn active" id="response-btn">响应时间趋势</button>' +
-                '<button onclick="showUptimeChart()" class="chart-btn" id="uptime-btn">在线状态</button>' +
-                '<button onclick="showSummaryChart()" class="chart-btn" id="summary-btn">数据概览</button>' +
+                '<div style="background: white; border-radius: 8px; padding: ' + containerPadding + '; box-shadow: 0 2px 6px rgba(0,0,0,0.1); margin-top: 0.5rem; max-width: 100%; overflow: hidden;">' +
+                '<h4 style="text-align: center; margin: 0 0 0.75rem 0; color: #2d3748; font-size: ' + (isMobile ? '0.85rem' : '1rem') + '; font-weight: 600;">📈 ' + timeRangeText + ' 监控图表</h4>' +
+                '<div style="display: flex; gap: 0.4rem; margin-bottom: 0.75rem; justify-content: center; flex-wrap: wrap;">' +
+                '<button onclick="showResponseTimeChart()" class="chart-btn active" id="response-btn" style="' + buttonSize + '">响应时间</button>' +
+                '<button onclick="showUptimeChart()" class="chart-btn" id="uptime-btn" style="' + buttonSize + '">在线状态</button>' +
+                '<button onclick="showSummaryChart()" class="chart-btn" id="summary-btn" style="' + buttonSize + '">数据概览</button>' +
                 '</div>' +
-                '<div style="position: relative; height: 350px;">' +
-                '<canvas id="monitor-chart-canvas"></canvas>' +
+                '<div style="position: relative; height: ' + chartHeight + '; width: 100%; background: #fafafa; border-radius: 6px; overflow: hidden;">' +
+                '<canvas id="monitor-chart-canvas" style="display: block; width: 100%; height: 100%;"></canvas>' +
                 '</div>' +
                 '</div>';
 
@@ -2195,7 +2659,7 @@ const DEFAULT_SITE_CONFIG = {
             document.getElementById(activeId).classList.add('active');
         }
 
-        // 创建折线图
+        // 创建折线图 - 移动端优化
         function createLineChart(canvasId, data, title) {
             const canvas = document.getElementById(canvasId);
             if (!canvas) return;
@@ -2207,9 +2671,34 @@ const DEFAULT_SITE_CONFIG = {
                 window.currentChart.destroy();
             }
 
-            // 确保canvas填充容器
-            canvas.style.width = '100%';
-            canvas.style.height = '100%';
+            // 检测是否为移动设备
+            const isMobile = window.innerWidth <= 768;
+            const isSmallScreen = window.innerWidth <= 480;
+            
+            // 对于图表数据点，根据屏幕宽度调整显示的数量
+            if (data.labels && data.labels.length > 0) {
+                // 小屏幕设备显示更少的数据点
+                const maxDataPoints = isSmallScreen ? 8 : (isMobile ? 12 : 20);
+                if (data.labels.length > maxDataPoints) {
+                    const step = Math.ceil(data.labels.length / maxDataPoints);
+                    const filteredLabels = [];
+                    const filteredDatasets = data.datasets.map(ds => {
+                        const newData = [];
+                        return { ...ds, data: newData };
+                    });
+                    
+                    // 间隔采样数据点
+                    for (let i = 0; i < data.labels.length; i += step) {
+                        filteredLabels.push(data.labels[i]);
+                        data.datasets.forEach((ds, dsIndex) => {
+                            filteredDatasets[dsIndex].data.push(ds.data[i]);
+                        });
+                    }
+                    
+                    data.labels = filteredLabels;
+                    data.datasets = filteredDatasets;
+                }
+            }
 
             window.currentChart = new Chart(ctx, {
                 type: 'line',
@@ -2217,37 +2706,94 @@ const DEFAULT_SITE_CONFIG = {
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    aspectRatio: isMobile ? 1 : 2, // 移动端使用更方正的比例
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    },
                     layout: {
                         padding: {
-                            top: 10,
-                            right: 10,
-                            bottom: 10,
-                            left: 10
+                            top: isMobile ? 5 : 10,
+                            right: isMobile ? 8 : 15,
+                            bottom: isMobile ? 10 : 20,
+                            left: isMobile ? 12 : 25
                         }
                     },
                     plugins: {
                         title: {
-                            display: true,
-                            text: title,
-                            font: { size: 16, weight: 'bold' }
+                            display: false
                         },
                         legend: {
                             display: true,
-                            position: 'top'
+                            position: 'top',
+                            align: 'center',
+                            labels: {
+                                boxWidth: isMobile ? 8 : 12,
+                                font: { size: isMobile ? 10 : 12 },
+                                padding: isMobile ? 6 : 10,
+                                usePointStyle: true,
+                                pointStyle: 'circle'
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0,0,0,0.8)',
+                            titleFont: { size: isMobile ? 10 : 12 },
+                            bodyFont: { size: isMobile ? 9 : 11 },
+                            cornerRadius: 4,
+                            displayColors: true,
+                            padding: isMobile ? 6 : 8,
+                            callbacks: {
+                                // 自定义提示格式
+                                title: function(items) {
+                                    if (!items.length) return '';
+                                    return items[0].label || '';
+                                },
+                                label: function(item) {
+                                    return ' ' + item.dataset.label + ': ' + item.raw + 'ms';
+                                }
+                            }
                         }
                     },
                     scales: {
                         y: {
                             beginAtZero: true,
                             title: {
-                                display: true,
-                                text: '响应时间 (ms)'
+                                display: !isSmallScreen,
+                                text: '响应时间 (ms)',
+                                font: { size: isMobile ? 10 : 12 }
+                            },
+                            ticks: {
+                                font: { size: isMobile ? 9 : 11 },
+                                maxTicksLimit: isMobile ? 5 : 8,
+                                callback: function(value) {
+                                    // 简化大数字显示
+                                    if (value >= 1000) {
+                                        return value / 1000 + 'k';
+                                    }
+                                    return value;
+                                }
+                            },
+                            grid: {
+                                color: 'rgba(0,0,0,0.05)',
+                                display: !isSmallScreen
                             }
                         },
                         x: {
                             title: {
-                                display: true,
-                                text: '时间'
+                                display: !isSmallScreen,
+                                text: '时间',
+                                font: { size: isMobile ? 10 : 12 }
+                            },
+                            ticks: {
+                                font: { size: isMobile ? 8 : 10 },
+                                maxRotation: isMobile ? 45 : 0,
+                                minRotation: isMobile ? 45 : 0,
+                                maxTicksLimit: isMobile ? 6 : 10,
+                                autoSkip: true
+                            },
+                            grid: {
+                                color: 'rgba(0,0,0,0.05)',
+                                display: !isSmallScreen
                             }
                         }
                     }
@@ -2255,7 +2801,7 @@ const DEFAULT_SITE_CONFIG = {
             });
         }
 
-        // 创建环形图
+        // 创建环形图 - 移动端优化
         function createDoughnutChart(canvasId, data, title) {
             const canvas = document.getElementById(canvasId);
             if (!canvas) return;
@@ -2266,9 +2812,9 @@ const DEFAULT_SITE_CONFIG = {
                 window.currentChart.destroy();
             }
 
-            // 确保canvas填充容器
-            canvas.style.width = '100%';
-            canvas.style.height = '100%';
+            // 检测是否为移动设备
+            const isMobile = window.innerWidth <= 768;
+            const isSmallScreen = window.innerWidth <= 480;
 
             window.currentChart = new Chart(ctx, {
                 type: 'doughnut',
@@ -2276,30 +2822,55 @@ const DEFAULT_SITE_CONFIG = {
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    aspectRatio: isMobile ? 1 : 1.5,
+                    cutout: isMobile ? '65%' : '60%', // 移动端环形图更细
                     layout: {
                         padding: {
-                            top: 10,
-                            right: 10,
-                            bottom: 10,
-                            left: 10
+                            top: isMobile ? 5 : 8,
+                            right: isMobile ? 8 : 12,
+                            bottom: isMobile ? 5 : 8,
+                            left: isMobile ? 8 : 12
                         }
                     },
                     plugins: {
                         title: {
-                            display: true,
-                            text: title,
-                            font: { size: 16, weight: 'bold' }
+                            display: false
                         },
                         legend: {
                             display: true,
-                            position: 'bottom'
+                            position: isMobile ? 'bottom' : 'right',
+                            align: 'center',
+                            labels: {
+                                boxWidth: isMobile ? 10 : 12,
+                                font: { size: isMobile ? 10 : 12 },
+                                padding: isMobile ? 6 : 10,
+                                usePointStyle: true,
+                                pointStyle: 'circle'
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0,0,0,0.8)',
+                            titleFont: { size: isMobile ? 10 : 12 },
+                            bodyFont: { size: isMobile ? 9 : 11 },
+                            cornerRadius: 4,
+                            displayColors: true,
+                            padding: isMobile ? 6 : 8,
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.label || '';
+                                    const value = context.raw || 0;
+                                    const total = context.chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
+                                    const percentage = Math.round((value / total) * 100);
+                                    return label + ': ' + value + ' (' + percentage + '%)';
+                                }
+                            }
                         }
                     }
                 }
             });
         }
 
-        // 创建柱状图
+        // 创建柱状图 - 移动端优化
         function createBarChart(canvasId, data, title) {
             const canvas = document.getElementById(canvasId);
             if (!canvas) return;
@@ -2310,9 +2881,27 @@ const DEFAULT_SITE_CONFIG = {
                 window.currentChart.destroy();
             }
 
-            // 确保canvas填充容器
-            canvas.style.width = '100%';
-            canvas.style.height = '100%';
+            // 检测是否为移动设备
+            const isMobile = window.innerWidth <= 768;
+            const isSmallScreen = window.innerWidth <= 480;
+            
+            // 小屏幕上减少数据点
+            if (isSmallScreen && data.labels && data.labels.length > 3) {
+                // 只保留关键指标
+                const keysToKeep = ['总检查', '成功', '失败'];
+                const newLabels = [];
+                const newData = [];
+                
+                data.labels.forEach((label, index) => {
+                    if (keysToKeep.includes(label)) {
+                        newLabels.push(label);
+                        newData.push(data.datasets[0].data[index]);
+                    }
+                });
+                
+                data.labels = newLabels;
+                data.datasets[0].data = newData;
+            }
 
             window.currentChart = new Chart(ctx, {
                 type: 'bar',
@@ -2320,32 +2909,91 @@ const DEFAULT_SITE_CONFIG = {
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    indexAxis: isSmallScreen ? 'y' : 'x', // 小屏幕使用水平柱状图
+                    aspectRatio: isMobile ? 0.8 : 1.5,
                     layout: {
                         padding: {
-                            top: 10,
-                            right: 10,
-                            bottom: 10,
-                            left: 10
+                            top: isMobile ? 5 : 8,
+                            right: isMobile ? 10 : 15,
+                            bottom: isMobile ? 5 : 12,
+                            left: isMobile ? 15 : 20
                         }
                     },
                     plugins: {
                         title: {
-                            display: true,
-                            text: title,
-                            font: { size: 16, weight: 'bold' }
+                            display: false
                         },
                         legend: {
                             display: false
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0,0,0,0.8)',
+                            titleFont: { size: isMobile ? 10 : 12 },
+                            bodyFont: { size: isMobile ? 9 : 11 },
+                            cornerRadius: 4,
+                            displayColors: true,
+                            padding: isMobile ? 6 : 8,
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.dataset.label || '';
+                                    const value = context.raw || 0;
+                                    return label + ': ' + value;
+                                }
+                            }
                         }
                     },
                     scales: {
                         y: {
-                            beginAtZero: true
+                            beginAtZero: true,
+                            title: {
+                                display: !isSmallScreen,
+                                text: isSmallScreen ? '' : '数量',
+                                font: { size: isMobile ? 10 : 12 }
+                            },
+                            ticks: {
+                                font: { size: isMobile ? 8 : 10 },
+                                maxTicksLimit: isMobile ? 5 : 8,
+                                callback: function(value) {
+                                    // 简化大数字
+                                    if (value >= 1000) return value/1000 + 'k';
+                                    return value;
+                                }
+                            },
+                            grid: {
+                                color: 'rgba(0,0,0,0.05)',
+                                display: !isSmallScreen
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: false
+                            },
+                            ticks: {
+                                font: { size: isMobile ? 8 : 10 },
+                                maxRotation: isSmallScreen ? 0 : 45,
+                                minRotation: isSmallScreen ? 0 : 45,
+                                autoSkip: true
+                            },
+                            grid: {
+                                color: 'rgba(0,0,0,0.05)',
+                                display: !isSmallScreen
+                            }
                         }
                     }
                 }
             });
         }
+
+        // 窗口大小变化时重新渲染图表
+        let resizeTimeout;
+        window.addEventListener('resize', function() {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(function() {
+                if (window.currentChart) {
+                    window.currentChart.resize();
+                }
+            }, 250);
+        });
 
         // 页面加载时初始化
         document.addEventListener('DOMContentLoaded', function() {
@@ -2648,21 +3296,79 @@ async function handleLoginPage(request) {
 // 处理登录提交
 async function handleLoginSubmit(request) {
   try {
-    const { username, password, remember } = await request.json();
+    // 检查请求方法
+    if (request.method !== 'POST') {
+      return new Response(JSON.stringify({ error: '请求方法错误' }), {
+        status: 405,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // 检查Content-Type
+    const contentType = request.headers.get('Content-Type') || '';
+    if (!contentType.includes('application/json')) {
+      return new Response(JSON.stringify({ error: '请求头Content-Type必须为application/json' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // 尝试解析JSON
+    let requestData;
+    try {
+      const requestText = await request.text();
+      if (!requestText.trim()) {
+        return new Response(JSON.stringify({ error: '请求体不能为空' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      requestData = JSON.parse(requestText);
+    } catch (jsonError) {
+      console.error('JSON解析失败:', jsonError);
+      return new Response(JSON.stringify({ error: 'JSON格式错误，请检查请求体格式' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    const { username, password, remember } = requestData;
+
+    // 验证必填字段
+    if (!username || !password) {
+      return new Response(JSON.stringify({ error: '用户名和密码不能为空' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
 
     // 从环境变量获取用户名和密码，如果没有设置则使用默认值
     const expectedUsername = globalThis.USER || 'admin';
     const expectedPassword = globalThis.PASSWORD || 'password';
 
-  if (username !== expectedUsername || password !== expectedPassword) {
+    if (username !== expectedUsername || password !== expectedPassword) {
       return new Response(JSON.stringify({ error: '用户名或密码错误' }), {
-      status: 401,
+        status: 401,
         headers: { 'Content-Type': 'application/json' }
       });
     }
 
-    // 创建session
-    const token = await createSession(username);
+    // 创建session token（不存储到KV，避免写入限制）
+    const token = generateSessionToken();
+
+    // 创建临时session数据（存储在内存中）
+    const sessionData = {
+      username,
+      created: Date.now(),
+      expires: Date.now() + SESSION_DURATION,
+      valid: true
+    };
+
+    // 存储到内存缓存而不是KV
+    if (!globalThis.sessionCache) {
+      globalThis.sessionCache = new Map();
+    }
+    globalThis.sessionCache.set(token, sessionData);
 
     // 设置cookie
     const cookieOptions = [
@@ -2680,9 +3386,12 @@ async function handleLoginSubmit(request) {
       cookieOptions.push('HttpOnly');
     }
 
+    console.log('用户登录成功:', username, '- Token:', token.substring(0, 8) + '...');
+
     return new Response(JSON.stringify({
       success: true,
-      token: remember ? token : null
+      token: remember ? token : null,
+      message: '登录成功'
     }), {
       status: 200,
       headers: {
@@ -2691,8 +3400,9 @@ async function handleLoginSubmit(request) {
       }
     });
   } catch (error) {
-    return new Response(JSON.stringify({ error: '请求格式错误' }), {
-      status: 400,
+    console.error('登录处理失败:', error);
+    return new Response(JSON.stringify({ error: '服务器内部错误，请稍后重试' }), {
+      status: 500,
       headers: { 'Content-Type': 'application/json' }
     });
   }
@@ -2706,45 +3416,59 @@ function generateSessionToken() {
   return btoa(Date.now() + Math.random().toString(36)).replace(/[^a-zA-Z0-9]/g, '');
 }
 
-// 验证session token
+// 验证session token（使用内存缓存，避免KV写入限制）
 async function validateSessionToken(token) {
   if (!token) return false;
 
   try {
-    const sessionData = await PROXY_KV.get(`session_${token}`);
-    if (!sessionData) return false;
+    // 首先检查内存缓存
+    if (!globalThis.sessionCache) {
+      globalThis.sessionCache = new Map();
+    }
 
-    const session = JSON.parse(sessionData);
-    const now = Date.now();
-
-    // 检查是否过期
-    if (now > session.expires) {
-      await PROXY_KV.delete(`session_${token}`);
+    const sessionData = globalThis.sessionCache.get(token);
+    if (!sessionData) {
+      console.log('Session not found in cache:', token.substring(0, 8) + '...');
       return false;
     }
 
-    // 延长session时间
-    session.expires = now + SESSION_DURATION;
-    await PROXY_KV.put(`session_${token}`, JSON.stringify(session));
+    const now = Date.now();
 
-  return true;
+    // 检查是否过期
+    if (now > sessionData.expires) {
+      globalThis.sessionCache.delete(token);
+      console.log('Session expired:', token.substring(0, 8) + '...');
+      return false;
+    }
+
+    // 自动延长session时间（在内存中）
+    const timeUntilExpiry = sessionData.expires - now;
+    const renewThreshold = SESSION_DURATION * 0.5;
+
+    if (timeUntilExpiry < renewThreshold) {
+      sessionData.expires = now + SESSION_DURATION;
+      globalThis.sessionCache.set(token, sessionData);
+      console.log('Session renewed in memory:', token.substring(0, 8) + '...');
+    }
+
+    return true;
   } catch (error) {
     console.error('验证session失败:', error);
     return false;
   }
 }
 
-// 创建session
-async function createSession(username) {
-  const token = generateSessionToken();
-  const session = {
-    username,
-    created: Date.now(),
-    expires: Date.now() + SESSION_DURATION
-  };
+// 清理过期的内存session
+function cleanExpiredSessions() {
+  if (!globalThis.sessionCache) return;
 
-  await PROXY_KV.put(`session_${token}`, JSON.stringify(session));
-  return token;
+  const now = Date.now();
+  for (const [token, sessionData] of globalThis.sessionCache.entries()) {
+    if (now > sessionData.expires) {
+      globalThis.sessionCache.delete(token);
+      console.log('Cleaned expired session:', token.substring(0, 8) + '...');
+    }
+  }
 }
 
 // 检查认证 - 支持session和basic auth
@@ -4111,6 +4835,9 @@ async function handleScheduledMonitoring() {
   await cleanOldLogs();
   await cleanOldMonitorData();
 
+  // 清理过期的内存session
+  cleanExpiredSessions();
+
   for (const [key, config] of Object.entries(SITE_CONFIG)) {
     if (config.interval > 0) {
       try {
@@ -4164,24 +4891,34 @@ async function handleScheduledMonitoring() {
       }
     }
   }
+
+  // 监控任务结束后强制刷新缓存
+  await flushAllCaches();
+  console.log('定时监控任务完成');
 }
 
-// 保存监控历史数据
+// 监控历史数据缓存
+let monitorHistoryCache = new Map();
+let lastMonitorFlush = Date.now();
+const MONITOR_FLUSH_INTERVAL = 10 * 60 * 1000; // 10分钟刷新一次
+const MONITOR_BATCH_SIZE = 20; // 批量大小
+
+// 保存监控历史数据（优化版本 - 减少KV写入）
 async function saveMonitorHistory(siteKey, status) {
   try {
     const now = new Date();
     const dateKey = now.toISOString().split('T')[0]; // YYYY-MM-DD
-    const historyKey = `monitor_history_${siteKey}_${dateKey}`;
+    const cacheKey = `${siteKey}_${dateKey}`;
 
-    // 获取今天的历史记录
-    let todayHistory = [];
-    const existingHistory = await PROXY_KV.get(historyKey);
-    if (existingHistory) {
-      todayHistory = JSON.parse(existingHistory);
+    // 获取或创建缓存条目
+    if (!monitorHistoryCache.has(cacheKey)) {
+      monitorHistoryCache.set(cacheKey, []);
     }
 
-    // 添加新记录
-    todayHistory.push({
+    const cachedHistory = monitorHistoryCache.get(cacheKey);
+
+    // 添加新记录到缓存
+    cachedHistory.push({
       timestamp: status.lastCheck,
       isOnline: status.isOnline,
       responseTime: status.responseTime,
@@ -4189,16 +4926,59 @@ async function saveMonitorHistory(siteKey, status) {
       error: status.error || null
     });
 
-    // 限制每天最多保存1440条记录（每分钟一条）
-    if (todayHistory.length > 1440) {
-      todayHistory = todayHistory.slice(-1440);
-    }
+    // 检查是否需要刷新到KV
+    const currentTime = Date.now();
+    const totalCachedRecords = Array.from(monitorHistoryCache.values()).reduce((sum, arr) => sum + arr.length, 0);
 
-    // 保存历史记录
-    await PROXY_KV.put(historyKey, JSON.stringify(todayHistory));
+    if (totalCachedRecords >= MONITOR_BATCH_SIZE || (currentTime - lastMonitorFlush) >= MONITOR_FLUSH_INTERVAL) {
+      await flushMonitorHistoryToKV();
+    }
 
   } catch (error) {
     console.error('保存监控历史失败:', error);
+  }
+}
+
+// 将缓存的监控历史批量写入KV
+async function flushMonitorHistoryToKV() {
+  if (monitorHistoryCache.size === 0) return;
+
+  try {
+    for (const [cacheKey, cachedRecords] of monitorHistoryCache.entries()) {
+      if (cachedRecords.length === 0) continue;
+
+      const [siteKey, dateKey] = cacheKey.split('_');
+      const historyKey = `monitor_history_${siteKey}_${dateKey}`;
+
+      // 获取现有的历史记录
+      let existingHistory = [];
+      const existingData = await PROXY_KV.get(historyKey);
+      if (existingData) {
+        existingHistory = JSON.parse(existingData);
+      }
+
+      // 合并缓存的记录
+      existingHistory.push(...cachedRecords);
+
+      // 限制每天最多保存1440条记录（每分钟一条）
+      if (existingHistory.length > 1440) {
+        existingHistory = existingHistory.slice(-1440);
+      }
+
+      // 保存到KV
+      await PROXY_KV.put(historyKey, JSON.stringify(existingHistory));
+    }
+
+    console.log(`批量写入监控历史数据，涉及 ${monitorHistoryCache.size} 个站点`);
+
+    // 清空缓存
+    monitorHistoryCache.clear();
+    lastMonitorFlush = Date.now();
+
+  } catch (error) {
+    console.error('批量写入监控历史失败:', error);
+    // 发生错误时也要清空缓存
+    monitorHistoryCache.clear();
   }
 }
 

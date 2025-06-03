@@ -24,9 +24,9 @@ USER nodeuser
 # 暴露端口(可通过环境变量配置)
 EXPOSE 3000
 
-# 健康检查
+# 健康检查 - 使用 Node.js 内置方式
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:${PORT:-3000}/ || exit 1
+  CMD node -e "require('http').get('http://localhost:${PORT:-3000}/', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
 
 # 启动应用
 CMD ["node", "app.js"]

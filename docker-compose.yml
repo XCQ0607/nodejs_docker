@@ -1,0 +1,122 @@
+version: '3.8'
+
+services:
+  # Argo 隧道模式（推荐）
+  vless-argo:
+    image: xcq0607/nodejs_vless:latest
+    container_name: vless-argo
+    restart: always
+    environment:
+      # 基础配置
+      - UUID=${UUID:-}
+      - PORT=0  # 设为 0 启用 Argo 隧道
+      - NAME=${NAME:-VlessArgo}
+      
+      # Argo 隧道配置
+      - ARGO_PORT=${ARGO_PORT:-8001}
+      - ARGO_AUTH=${ARGO_AUTH:-}
+      - ARGO_DOMAIN=${ARGO_DOMAIN:-}
+      - FILE_PATH=/app/tmp
+      
+      # xbin 粘贴板配置（可选）
+      - BINURL=${BINURL:-}
+      - BINPATH=${BINPATH:-}
+      - BINPWD=${BINPWD:-}
+      
+      # 哪吒监控配置（可选）
+      - NEZHA_SERVER=${NEZHA_SERVER:-}
+      - NEZHA_PORT=${NEZHA_PORT:-}
+      - NEZHA_KEY=${NEZHA_KEY:-}
+    volumes:
+      - vless_data:/app/tmp
+    networks:
+      - vless_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # 传统模式
+  vless-traditional:
+    image: xcq0607/nodejs_vless:latest
+    container_name: vless-traditional
+    restart: always
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
+    environment:
+      # 基础配置
+      - UUID=${UUID:-}
+      - DOMAIN=${DOMAIN:-}
+      - PORT=${PORT:-3000}
+      - NAME=${NAME:-VlessTraditional}
+      
+      # xbin 粘贴板配置（可选）
+      - BINURL=${BINURL:-}
+      - BINPATH=${BINPATH:-}
+      - BINPWD=${BINPWD:-}
+      
+      # 哪吒监控配置（可选）
+      - NEZHA_SERVER=${NEZHA_SERVER:-}
+      - NEZHA_PORT=${NEZHA_PORT:-}
+      - NEZHA_KEY=${NEZHA_KEY:-}
+    volumes:
+      - vless_data:/app/tmp
+    networks:
+      - vless_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${PORT:-3000}/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    profiles:
+      - traditional
+
+  # 完整功能模式
+  vless-full:
+    image: xcq0607/nodejs_vless:latest
+    container_name: vless-full
+    restart: always
+    environment:
+      # 基础配置
+      - UUID=${UUID:-}
+      - PORT=0  # Argo 隧道模式
+      - NAME=${NAME:-VlessFull}
+      
+      # Argo 隧道配置
+      - ARGO_PORT=${ARGO_PORT:-8001}
+      - ARGO_AUTH=${ARGO_AUTH:-}
+      - ARGO_DOMAIN=${ARGO_DOMAIN:-}
+      - FILE_PATH=/app/tmp
+      
+      # xbin 粘贴板配置
+      - BINURL=${BINURL:-https://xbin.pages.dev}
+      - BINPATH=${BINPATH:-}
+      - BINPWD=${BINPWD:-}
+      
+      # 哪吒监控配置
+      - NEZHA_SERVER=${NEZHA_SERVER:-}
+      - NEZHA_PORT=${NEZHA_PORT:-}
+      - NEZHA_KEY=${NEZHA_KEY:-}
+    volumes:
+      - vless_data:/app/tmp
+    networks:
+      - vless_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    profiles:
+      - full
+
+volumes:
+  vless_data:
+    driver: local
+
+networks:
+  vless_network:
+    driver: bridge
