@@ -122,7 +122,7 @@ async function main() {
 
             if (path === '/') {
                 res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-                const statsInfo = `Hello, World-YGkkk\nAPI IP数量: ${apiData.length}\n最后更新时间: ${lastUpdateTime}`;
+                const statsInfo = `Hello, World \nAPI IP数量: ${apiData.length}\n最后更新时间: ${lastUpdateTime}`;
                 res.end(statsInfo);
             } else if (path === `/${UUID}`) {
                 let vlessURL;
